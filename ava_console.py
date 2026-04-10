@@ -218,7 +218,6 @@ def classify_state(score: int) -> str:
 
 def state_bar(score: int, width: int = 7) -> str:
     """Visual bar representing the -3..+3 scale."""
-    markers = ["▓", "▓", "▓", "░", "░", "░", "░"]
     pos = clamp(score) + 3  # 0..6
     bar = list("·" * width)
     bar[pos] = "█"
