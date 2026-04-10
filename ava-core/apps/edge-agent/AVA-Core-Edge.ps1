@@ -195,8 +195,8 @@ function Initialize-DefaultFiles {
     if (-not (Test-Path -LiteralPath $script:TelemetryCsv)) {
 @"
 timestamp,asset_id,tempC,currentA,voltageV
-$(Get-Date -Format s),CAB1-QF1,32.5,7.1,229
-$(Get-Date -Format s),CAB1-PLC1,35.2,2.8,230
+$(Get-Date -Format s),CAB1-QF1,32.5,7.1,229.0
+$(Get-Date -Format s),CAB1-PLC1,35.2,2.8,230.0
 "@ | Set-Content -Path $script:TelemetryCsv -Encoding UTF8
     }
 }
