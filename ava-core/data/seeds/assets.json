@@ -1,0 +1,66 @@
+{
+  "cabinet": {
+    "id": "CAB1",
+    "name": "Schaltschrank 1",
+    "location": "Werkbank / Demo"
+  },
+  "devices": [
+    {
+      "asset_id": "CAB1-QF1",
+      "type": "circuit_breaker",
+      "name": "Leitungsschutzschalter QF1",
+      "cabinet": "CAB1",
+      "location": { "rail": "DIN-1", "x": 120, "y": 80 },
+      "plan_ref": "QF1",
+      "photo_refs": ["img_12_region_4"],
+      "telemetry": {
+        "tempTag":    "cab1.qf1.temp",
+        "currentTag": "cab1.qf1.current",
+        "voltageTag": "cab1.qf1.voltage"
+      },
+      "telemetry_tags": ["cab1.qf1.current", "cab1.qf1.temp", "cab1.qf1.voltage"],
+      "network_identity": null,
+      "criticality": "high",
+      "dependencies": ["CAB1-K1", "CAB1-PLC1"],
+      "allowed_actions": ["alert", "safe_shutdown_request"]
+    },
+    {
+      "asset_id": "CAB1-PLC1",
+      "type": "plc",
+      "name": "SPS PLC1",
+      "cabinet": "CAB1",
+      "location": { "rail": "DIN-2", "x": 200, "y": 80 },
+      "plan_ref": "PLC1",
+      "photo_refs": ["img_12_region_5"],
+      "telemetry": {
+        "tempTag":    "cab1.plc1.temp",
+        "currentTag": "cab1.plc1.current",
+        "voltageTag": "cab1.plc1.voltage",
+        "statusTag":  "cab1.plc1.status"
+      },
+      "telemetry_tags": ["cab1.plc1.temp", "cab1.plc1.current", "cab1.plc1.voltage", "cab1.plc1.status"],
+      "network_identity": { "ip": "192.168.1.10", "mac": "00:11:22:33:44:55" },
+      "criticality": "high",
+      "dependencies": [],
+      "allowed_actions": ["alert", "safe_shutdown_request", "reboot"]
+    },
+    {
+      "asset_id": "CAB1-K1",
+      "type": "contactor",
+      "name": "Schütz K1",
+      "cabinet": "CAB1",
+      "location": { "rail": "DIN-1", "x": 80, "y": 80 },
+      "plan_ref": "K1",
+      "photo_refs": ["img_12_region_3"],
+      "telemetry": {
+        "currentTag": "cab1.k1.current",
+        "statusTag":  "cab1.k1.status"
+      },
+      "telemetry_tags": ["cab1.k1.current", "cab1.k1.status"],
+      "network_identity": null,
+      "criticality": "medium",
+      "dependencies": ["CAB1-QF1"],
+      "allowed_actions": ["alert"]
+    }
+  ]
+}

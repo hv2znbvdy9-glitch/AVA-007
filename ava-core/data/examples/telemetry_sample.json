@@ -1,0 +1,6 @@
+[
+  { "timestamp": "2026-04-10T00:00:00", "asset_id": "CAB1-QF1",  "tempC": 32.5, "currentA": 7.1, "voltageV": 229.0 },
+  { "timestamp": "2026-04-10T00:00:00", "asset_id": "CAB1-PLC1", "tempC": 35.2, "currentA": 2.8, "voltageV": 230.0 },
+  { "timestamp": "2026-04-10T00:01:00", "asset_id": "CAB1-QF1",  "tempC": 56.3, "currentA": 7.2, "voltageV": 229.2 },
+  { "timestamp": "2026-04-10T00:01:00", "asset_id": "CAB1-PLC1", "tempC": 36.0, "currentA": 3.1, "voltageV": 230.0 }
+]

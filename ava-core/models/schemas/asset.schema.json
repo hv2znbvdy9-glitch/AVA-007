@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ava-core/schemas/asset.schema.json",
+  "title": "AVA Asset",
+  "description": "Schema for an industrial asset managed by AVA CORE",
+  "type": "object",
+  "required": ["asset_id", "type", "cabinet", "criticality"],
+  "properties": {
+    "asset_id": {
+      "type": "string",
+      "description": "Unique identifier for the asset (e.g. CAB1-QF1)"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["circuit_breaker", "plc", "hmi", "sensor", "actuator", "relay", "contactor", "drive", "psu", "switch", "router", "camera", "other"],
+      "description": "Asset type"
+    },
+    "cabinet": {
+      "type": "string",
+      "description": "Cabinet identifier the asset belongs to"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable name"
+    },
+    "location": {
+      "type": "object",
+      "description": "Physical location within the cabinet",
+      "properties": {
+        "rail": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "plan_ref": {
+      "type": ["string", "null"],
+      "description": "Reference label as shown in the electrical plan"
+    },
+    "photo_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "References to photo regions showing this asset"
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Telemetry tag mapping",
+      "properties": {
+        "tempTag":     { "type": "string" },
+        "currentTag":  { "type": "string" },
+        "voltageTag":  { "type": "string" },
+        "statusTag":   { "type": "string" }
+      }
+    },
+    "telemetry_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of telemetry tag names associated with this asset"
+    },
+    "network_identity": {
+      "type": ["object", "null"],
+      "description": "Network identity if the asset is network-connected",
+      "properties": {
+        "ip":  { "type": "string" },
+        "mac": { "type": "string" }
+      }
+    },
+    "criticality": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"],
+      "description": "Operational criticality of the asset"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "asset_ids this asset depends on"
+    },
+    "allowed_actions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["alert", "safe_shutdown_request", "reboot", "isolate", "acknowledge"]
+      },
+      "description": "Actions AVA is permitted to trigger on this asset"
+    }
+  },
+  "additionalProperties": false
+}
