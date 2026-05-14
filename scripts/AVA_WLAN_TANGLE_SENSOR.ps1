@@ -79,6 +79,12 @@ function Write-JsonLine {
     Add-Content -Path $Path -Value $line -Encoding UTF8
 }
 
+function HtmlEncode {
+    param([AllowNull()][object]$Value)
+    if ($null -eq $Value) { return '' }
+    return [System.Net.WebUtility]::HtmlEncode([string]$Value)
+}
+
 # =========================
 # TANGLE HASH CHAIN
 # =========================
@@ -261,13 +267,13 @@ function Build-WlanPortal {
     $wlanRows = foreach ($n in $Networks) {
         $authClass = if ([string]$n.Authentication -match 'Open|None') { 'open' } else { '' }
         "<tr>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.SSID))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.BSSID))</td>
-          <td class='$authClass'>$([System.Web.HttpUtility]::HtmlEncode([string]$n.Authentication))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.Encryption))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.Signal))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.RadioType))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.Channel))</td>
+          <td>$(HtmlEncode $n.SSID)</td>
+          <td>$(HtmlEncode $n.BSSID)</td>
+          <td class='$authClass'>$(HtmlEncode $n.Authentication)</td>
+          <td>$(HtmlEncode $n.Encryption)</td>
+          <td>$(HtmlEncode $n.Signal)</td>
+          <td>$(HtmlEncode $n.RadioType)</td>
+          <td>$(HtmlEncode $n.Channel)</td>
         </tr>"
     }
 
@@ -281,11 +287,11 @@ function Build-WlanPortal {
     # Adapter table
     $adapterRows = foreach ($ad in $LocalSnap.adapters) {
         "<tr>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.Name))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.InterfaceDescription))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.Status))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.MacAddress))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.LinkSpeed))</td>
+          <td>$(HtmlEncode $ad.Name)</td>
+          <td>$(HtmlEncode $ad.InterfaceDescription)</td>
+          <td>$(HtmlEncode $ad.Status)</td>
+          <td>$(HtmlEncode $ad.MacAddress)</td>
+          <td>$(HtmlEncode $ad.LinkSpeed)</td>
         </tr>"
     }
 
@@ -303,11 +309,11 @@ function Build-WlanPortal {
         $gw   = if ($ip.IPv4DefaultGateway) { ($ip.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) -join ', ' } else { '' }
         $dns  = if ($ip.DNSServer) { ($ip.DNSServer.ServerAddresses) -join ', ' } else { '' }
         "<tr>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ip.InterfaceAlias))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode($ipv4))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode($ipv6))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode($gw))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode($dns))</td>
+          <td>$(HtmlEncode $ip.InterfaceAlias)</td>
+          <td>$(HtmlEncode $ipv4)</td>
+          <td>$(HtmlEncode $ipv6)</td>
+          <td>$(HtmlEncode $gw)</td>
+          <td>$(HtmlEncode $dns)</td>
         </tr>"
     }
 
@@ -321,10 +327,10 @@ function Build-WlanPortal {
     # Neighbor table
     $neighborRows = foreach ($nb in $LocalSnap.neighbors) {
         "<tr>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$nb.IPAddress))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$nb.LinkLayerAddress))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$nb.State))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$nb.InterfaceAlias))</td>
+          <td>$(HtmlEncode $nb.IPAddress)</td>
+          <td>$(HtmlEncode $nb.LinkLayerAddress)</td>
+          <td>$(HtmlEncode $nb.State)</td>
+          <td>$(HtmlEncode $nb.InterfaceAlias)</td>
         </tr>"
     }
 
@@ -335,9 +341,9 @@ function Build-WlanPortal {
 </table>
 "@
 
-    $ts   = [System.Web.HttpUtility]::HtmlEncode([string]$LocalSnap.time)
-    $host = [System.Web.HttpUtility]::HtmlEncode([string]$LocalSnap.computer)
-    $user = [System.Web.HttpUtility]::HtmlEncode([string]$LocalSnap.user)
+    $ts   = HtmlEncode $LocalSnap.time
+    $host = HtmlEncode $LocalSnap.computer
+    $user = HtmlEncode $LocalSnap.user
 
     $html = @"
 <html>

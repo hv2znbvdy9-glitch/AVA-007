@@ -126,8 +126,9 @@ function Add-Finding {
 }
 
 function HtmlEncode {
-    param([object]$Value)
-    return [System.Net.WebUtility]::HtmlEncode(($Value | Out-String))
+    param([AllowNull()][object]$Value)
+    if ($null -eq $Value) { return '' }
+    return [System.Net.WebUtility]::HtmlEncode([string]$Value)
 }
 
 function Is-PrivateIPv4 {
