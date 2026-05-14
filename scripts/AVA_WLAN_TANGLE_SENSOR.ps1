@@ -85,6 +85,15 @@ function HtmlEncode {
     return [System.Net.WebUtility]::HtmlEncode([string]$Value)
 }
 
+function New-EmptyRow {
+    param(
+        [int]$Cols,
+        [string]$Text
+    )
+
+    "<tr><td colspan='$Cols'>$(HtmlEncode $Text)</td></tr>"
+}
+
 # =========================
 # TANGLE HASH CHAIN
 # =========================
@@ -263,8 +272,21 @@ function Build-WlanPortal {
 </style>
 '@
 
+    $lastHash = 'N/A'
+    if (Test-Path -LiteralPath $TangleState) {
+        try {
+            $state = Get-Content -LiteralPath $TangleState -Raw | ConvertFrom-Json
+            if ($state.last_hash) {
+                $lastHash = [string]$state.last_hash
+            }
+        }
+        catch {
+            $lastHash = 'N/A'
+        }
+    }
+
     # WLAN table
-    $wlanRows = foreach ($n in $Networks) {
+    $wlanRows = foreach ($n in @($Networks)) {
         $authClass = if ([string]$n.Authentication -match 'Open|None') { 'open' } else { '' }
         "<tr>
           <td>$(HtmlEncode $n.SSID)</td>
@@ -276,6 +298,9 @@ function Build-WlanPortal {
           <td>$(HtmlEncode $n.Channel)</td>
         </tr>"
     }
+    if (-not $wlanRows) {
+        $wlanRows = New-EmptyRow -Cols 7 -Text 'Keine WLAN-Daten gefunden.'
+    }
 
     $wlanTable = @"
 <table>
@@ -285,7 +310,7 @@ function Build-WlanPortal {
 "@
 
     # Adapter table
-    $adapterRows = foreach ($ad in $LocalSnap.adapters) {
+    $adapterRows = foreach ($ad in @($LocalSnap.adapters)) {
         "<tr>
           <td>$(HtmlEncode $ad.Name)</td>
           <td>$(HtmlEncode $ad.InterfaceDescription)</td>
@@ -293,6 +318,9 @@ function Build-WlanPortal {
           <td>$(HtmlEncode $ad.MacAddress)</td>
           <td>$(HtmlEncode $ad.LinkSpeed)</td>
         </tr>"
+    }
+    if (-not $adapterRows) {
+        $adapterRows = New-EmptyRow -Cols 5 -Text 'Keine Adapterdaten gefunden.'
     }
 
     $adapterTable = @"
@@ -303,7 +331,7 @@ function Build-WlanPortal {
 "@
 
     # IP config table
-    $ipconfigRows = foreach ($ip in $LocalSnap.ipconfig) {
+    $ipconfigRows = foreach ($ip in @($LocalSnap.ipconfig)) {
         $ipv4 = if ($ip.IPv4Address) { ($ip.IPv4Address | ForEach-Object { $_.IPAddress }) -join ', ' } else { '' }
         $ipv6 = if ($ip.IPv6Address) { ($ip.IPv6Address | ForEach-Object { $_.IPAddress }) -join ', ' } else { '' }
         $gw   = if ($ip.IPv4DefaultGateway) { ($ip.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) -join ', ' } else { '' }
@@ -316,6 +344,9 @@ function Build-WlanPortal {
           <td>$(HtmlEncode $dns)</td>
         </tr>"
     }
+    if (-not $ipconfigRows) {
+        $ipconfigRows = New-EmptyRow -Cols 5 -Text 'Keine IP-Konfigurationsdaten gefunden.'
+    }
 
     $ipconfigTable = @"
 <table>
@@ -325,13 +356,16 @@ function Build-WlanPortal {
 "@
 
     # Neighbor table
-    $neighborRows = foreach ($nb in $LocalSnap.neighbors) {
+    $neighborRows = foreach ($nb in @($LocalSnap.neighbors)) {
         "<tr>
           <td>$(HtmlEncode $nb.IPAddress)</td>
           <td>$(HtmlEncode $nb.LinkLayerAddress)</td>
           <td>$(HtmlEncode $nb.State)</td>
           <td>$(HtmlEncode $nb.InterfaceAlias)</td>
         </tr>"
+    }
+    if (-not $neighborRows) {
+        $neighborRows = New-EmptyRow -Cols 4 -Text 'Keine LAN-Nachbarn gefunden.'
     }
 
     $neighborTable = @"
@@ -341,27 +375,32 @@ function Build-WlanPortal {
 </table>
 "@
 
+    $wlanCount     = @($Networks).Count
+    $neighborCount = @($LocalSnap.neighbors).Count
+    $adapterCount  = @($LocalSnap.adapters).Count
+    $ipconfigCount = @($LocalSnap.ipconfig).Count
     $ts   = HtmlEncode $LocalSnap.time
     $host = HtmlEncode $LocalSnap.computer
     $user = HtmlEncode $LocalSnap.user
+    $hash = HtmlEncode $lastHash
 
     $html = @"
 <html>
 <head><meta charset='utf-8'><title>AVA WLAN Portal</title>$style</head>
 <body>
   <h1>&#128246; AVA WLAN TANGLE SENSOR</h1>
-  <p class='ts'>Host: <b>$host</b> &nbsp;|&nbsp; User: <b>$user</b> &nbsp;|&nbsp; Stand: $ts</p>
+  <p class='ts'>Host: <b>$host</b> &nbsp;|&nbsp; User: <b>$user</b> &nbsp;|&nbsp; Stand: $ts &nbsp;|&nbsp; Letzter Tangle-Hash: <code>$hash</code></p>
 
-  <h2>Sichtbare WLAN-Netze ($($Networks.Count))</h2>
+  <h2>Sichtbare WLAN-Netze ($wlanCount)</h2>
   $wlanTable
 
-  <h2>Eigene Netzwerkadapter</h2>
+  <h2>Eigene Netzwerkadapter ($adapterCount)</h2>
   $adapterTable
 
-  <h2>IP-Konfiguration</h2>
+  <h2>IP-Konfiguration ($ipconfigCount)</h2>
   $ipconfigTable
 
-  <h2>LAN-Nachbarn (ARP/Neighbor)</h2>
+  <h2>LAN-Nachbarn (ARP/Neighbor) ($neighborCount)</h2>
   $neighborTable
 </body>
 </html>
