@@ -69,7 +69,7 @@ $SuspiciousCmdPatterns = @(
     'encodedcommand',
     'downloadstring',
     'invoke-expression',
-    'iex ',
+    'iex',
     '-nop',
     'noprofile',
     '-w hidden',
