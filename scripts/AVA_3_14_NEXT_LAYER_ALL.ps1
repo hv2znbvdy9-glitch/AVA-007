@@ -60,6 +60,9 @@ $SnapshotJson = Join-Path $ReportDir 'ava_3_14_latest_snapshot.json'
 $AnalysisJson = Join-Path $ReportDir 'ava_3_14_latest_analysis.json'
 
 $RiskPorts = @(21,23,135,139,445,3389,5985,5986)
+$HighRiskPorts = @(445,3389,5985,5986)
+$MaxRiskScore = 999
+$SuspiciousProcessNames = @('powershell.exe','pwsh.exe','cmd.exe','wscript.exe','cscript.exe','mshta.exe','rundll32.exe','regsvr32.exe')
 
 $SuspiciousCmdPatterns = @(
     '-enc',
@@ -100,9 +103,17 @@ function HtmlEncode {
 function Sha256Text {
     param([Parameter(Mandatory)][string]$Text)
 
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
-    (($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
+    $sha = $null
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+        (($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
+    }
+    finally {
+        if ($null -ne $sha) {
+            $sha.Dispose()
+        }
+    }
 }
 
 function Write-JsonLine {
@@ -464,7 +475,7 @@ function Analyze-Snapshot {
             $sev = 'MEDIUM'
             $s = 45
 
-            if ($remotePort -in @(445,3389,5985,5986)) {
+            if ($remotePort -in $HighRiskPorts) {
                 $sev = 'HIGH'
                 $s = 75
             }
@@ -491,7 +502,7 @@ function Analyze-Snapshot {
             $procName = ([string]$p.Name).ToLowerInvariant()
         }
 
-        if ($procName -in @('powershell.exe','pwsh.exe','cmd.exe','wscript.exe','cscript.exe','mshta.exe','rundll32.exe','regsvr32.exe')) {
+        if ($procName -in $SuspiciousProcessNames) {
             $hits = @()
 
             foreach ($pattern in $SuspiciousCmdPatterns) {
@@ -587,7 +598,7 @@ function Analyze-Snapshot {
 
     [ordered]@{
         time          = (Get-Date).ToString('o')
-        score         = [Math]::Min($score, 999)
+        score         = [Math]::Min($score, $MaxRiskScore)
         alert_count   = @($alerts).Count
         alerts        = $alerts
         delta         = $delta
@@ -804,7 +815,7 @@ function Install-GuardianTask {
 
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -RunOnce"
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
-    $trigger.Repetition = New-ScheduledTaskRepetitionSettings -Interval (New-TimeSpan -Seconds $IntervalSeconds) -Duration ([TimeSpan]::MaxValue)
+    $trigger.Repetition = New-ScheduledTaskRepetitionSettings -Interval (New-TimeSpan -Seconds $IntervalSeconds) -Duration (New-TimeSpan -Days 9999)
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
 
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
