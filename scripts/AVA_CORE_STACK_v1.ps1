@@ -47,6 +47,24 @@ foreach ($d in @($Root, $LogDir, $StateDir, $ReportDir, $TrendDir)) {
 }
 
 # ---------------------------------------------------------------------------
+# SCRIPT-LEVEL CONSTANTS
+# ---------------------------------------------------------------------------
+
+# Suspicious command-line patterns for PowerShell process detection
+$SuspiciousCmdPatterns = @(
+    "-enc","encodedcommand","-nop","noprofile",
+    "-w hidden","windowstyle hidden",
+    "downloadstring","invoke-expression","iex ",
+    "bypass","-ep bypass","frombase64string"
+)
+
+# Ports with elevated network risk
+$RiskPorts = @(21, 23, 135, 139, 445, 3389, 5985, 5986)
+
+# Well-known SID for the built-in Administrators group (language-independent)
+$AdminGroupSid = "S-1-5-32-544"
+
+# ---------------------------------------------------------------------------
 # UTILITY
 # ---------------------------------------------------------------------------
 function HtmlEncode($v) {
@@ -221,19 +239,12 @@ function Get-ProcessGraph {
         }
     } catch {}
 
-    $badPatterns = @(
-        "-enc","encodedcommand","-nop","noprofile",
-        "-w hidden","windowstyle hidden",
-        "downloadstring","invoke-expression","iex ",
-        "bypass","-ep bypass","frombase64string"
-    )
-
     $nodes = foreach ($p in $allProcs) {
         $pid  = [int]$p.ProcessId
         $ppid = [int]$p.ParentProcessId
         $cmd  = [string]$p.CommandLine
         $lower = $cmd.ToLowerInvariant()
-        $hits  = @($badPatterns | Where-Object { $lower.Contains($_) })
+        $hits  = @($SuspiciousCmdPatterns | Where-Object { $lower.Contains($_) })
 
         $parentName = if ($pidMap.ContainsKey($ppid)) { $pidMap[$ppid].Name } else { "N/A" }
 
@@ -254,19 +265,12 @@ function Get-ProcessGraph {
 }
 
 function Get-PowerShellProcessInfo {
-    $bad = @(
-        "-enc","encodedcommand","-nop","noprofile",
-        "-w hidden","windowstyle hidden",
-        "downloadstring","invoke-expression","iex ",
-        "bypass","-ep bypass","frombase64string"
-    )
-
     Get-CimInstance Win32_Process |
         Where-Object { $_.Name -in @("powershell.exe","pwsh.exe") } |
         ForEach-Object {
             $cmd   = [string]$_.CommandLine
             $lower = $cmd.ToLowerInvariant()
-            $hits  = @($bad | Where-Object { $lower.Contains($_) })
+            $hits  = @($SuspiciousCmdPatterns | Where-Object { $lower.Contains($_) })
 
             [ordered]@{
                 pid          = $_.ProcessId
@@ -288,28 +292,29 @@ function Get-IpReputation($ip) {
         return [ordered]@{ ip = $ip; category = "LOCAL"; risk = "NONE"; detail = "Kein Remote" }
     }
 
-    # RFC 1918 / loopback / link-local
+    # RFC 1918 / loopback
     if ($ip -match '^127\.' -or $ip -eq "::1") {
         return [ordered]@{ ip = $ip; category = "LOOPBACK"; risk = "NONE"; detail = "Loopback" }
     }
     if ($ip -match '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)') {
         return [ordered]@{ ip = $ip; category = "PRIVATE"; risk = "LOW"; detail = "Privates Netz" }
     }
+
+    # Cloud metadata endpoint must be checked before the generic 169.254.* link-local range
+    if ($ip -eq "169.254.169.254") {
+        return [ordered]@{ ip = $ip; category = "CLOUD_METADATA"; risk = "CRITICAL"; detail = "Cloud-Metadaten-Endpunkt" }
+    }
     if ($ip -match '^169\.254\.') {
         return [ordered]@{ ip = $ip; category = "LINK_LOCAL"; risk = "LOW"; detail = "Link-Local" }
     }
 
-    # Tor / known-bad exit-node ranges (small representative sample — purely illustrative)
+    # Tor exit-node heuristic — small representative sample compiled 2025-06.
+    # Review periodically against https://check.torproject.org/torbulkexitlist
     $torRanges = @('185\.220\.','45\.142\.','199\.249\.','51\.15\.','91\.108\.')
     foreach ($r in $torRanges) {
         if ($ip -match $r) {
             return [ordered]@{ ip = $ip; category = "TOR_LIKELY"; risk = "HIGH"; detail = "Moeglicherweise Tor-Exit-Node (Heuristik)" }
         }
-    }
-
-    # Cloud metadata endpoint
-    if ($ip -eq "169.254.169.254") {
-        return [ordered]@{ ip = $ip; category = "CLOUD_METADATA"; risk = "CRITICAL"; detail = "Cloud-Metadaten-Endpunkt" }
     }
 
     # Bogon / documentation ranges
@@ -372,15 +377,22 @@ function Get-NetworkInfo {
 # ADMINS / TASKS / SERVICES
 # ---------------------------------------------------------------------------
 function Get-Admins {
+    # Use the well-known SID S-1-5-32-544 (built-in Administrators) for language independence
     try {
-        Get-LocalGroupMember -Group "Administratoren" |
-            Select-Object Name,ObjectClass,PrincipalSource
-    } catch {
+        $group = Get-LocalGroup | Where-Object { $_.SID -eq $AdminGroupSid } | Select-Object -First 1
+        if ($group) {
+            return Get-LocalGroupMember -Group $group.Name |
+                       Select-Object Name,ObjectClass,PrincipalSource
+        }
+    } catch {}
+    # Fallback: try common localized names
+    foreach ($name in @("Administrators","Administratoren")) {
         try {
-            Get-LocalGroupMember -Group "Administrators" |
-                Select-Object Name,ObjectClass,PrincipalSource
-        } catch { @() }
+            return Get-LocalGroupMember -Group $name |
+                       Select-Object Name,ObjectClass,PrincipalSource
+        } catch {}
     }
+    return @()
 }
 
 function Get-TasksLite {
@@ -474,12 +486,10 @@ function Compute-RiskScore {
     }
     if ($highRepCount -gt 2) { $score += 15; $reasons.Add("Mehr als 2 Hochrisiko-Verbindungen (+15)") }
 
-    # Risk ports
-    $riskPorts = @(21,23,135,139,445,3389,5985,5986)
+    # Risk ports — score each risky connection independently
     foreach ($c in $Snapshot.network.tcp) {
-        if ($riskPorts -contains [int]$c.local_port -or $riskPorts -contains [int]$c.remote_port) {
+        if ($RiskPorts -contains [int]$c.local_port -or $RiskPorts -contains [int]$c.remote_port) {
             $score += 10; $reasons.Add("Risikoport $($c.local_port)/$($c.remote_port) Prozess $($c.process) (+10)")
-            break
         }
     }
 
@@ -578,9 +588,8 @@ function Compare-WithBaseline {
     }
 
     # Risk ports
-    $riskPorts = @(21,23,135,139,445,3389,5985,5986)
     foreach ($c in $Snapshot.network.tcp) {
-        if ($riskPorts -contains [int]$c.local_port -or $riskPorts -contains [int]$c.remote_port) {
+        if ($RiskPorts -contains [int]$c.local_port -or $RiskPorts -contains [int]$c.remote_port) {
             $alerts.Add([ordered]@{
                 severity = "MEDIUM"; type = "NETWORK_RISK_PORT"
                 message  = "Risikorelevante TCP-Verbindung: $($c.process) PID $($c.pid)"
@@ -857,7 +866,7 @@ function Build-Portal {
 
 <!-- Risiko-Score -->
 <div class="risk-card">
-  <div class="risk-score">$riskScore / ∞</div>
+  <div class="risk-score">$riskScore / &infin;</div>
   <div class="risk-label">Risikostufe: $riskLabel</div>
   <h2 style="margin-top:12px">Begruendung</h2>
   <ul class="reasons">$reasonList</ul>
