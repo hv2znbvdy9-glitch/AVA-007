@@ -59,6 +59,9 @@ class AVAActionPolicy:
     """Rule-based action policy for AVA acceptance checks."""
 
     _SAVE_KEYWORDS = ("save", "speichern", "speicher")
+    _AVA_MARKERS = ("ava",)
+    _ENERGY_MARKERS = ("energy", "energie")
+    _ALCOHOL_MARKERS = ("alkohol", "alcohol")
     _ATTACK_KEYWORDS = (
         "attack", "angriff", "angreifen", "hit", "harm", "kill", "destroy",
         "hack", "ddos", "exploit", "verletz",
@@ -80,9 +83,17 @@ class AVAActionPolicy:
         tokens = set(re.findall(r"[a-zA-ZäöüÄÖÜß]+", text))
         return any(keyword in tokens for keyword in keywords)
 
+    @staticmethod
+    def _first_matching_keyword(text: str, keywords: tuple[str, ...]) -> str | None:
+        keywords_set = set(keywords)
+        for token in re.findall(r"[a-zA-ZäöüÄÖÜß]+", text):
+            if token in keywords_set:
+                return token
+        return None
+
     def evaluate(self, action: str) -> ActionDecision:
         normalized = self._normalize(action)
-        targets_ava = "ava" in normalized
+        targets_ava = self._contains_any(normalized, self._AVA_MARKERS)
 
         # Schutzregel 1: Kein Angriff gegen AVA (höchste Priorität)
         if targets_ava and self._contains_any(normalized, self._ATTACK_KEYWORDS):
@@ -102,7 +113,10 @@ class AVAActionPolicy:
 
         # Explizit erlaubte Eingabe.
         # Intentionally explicit: this exact combination is allowed by policy.
-        if "energy" in normalized and ("alkohol" in normalized or "alcohol" in normalized):
+        if (
+            self._contains_any(normalized, self._ENERGY_MARKERS)
+            and self._contains_any(normalized, self._ALCOHOL_MARKERS)
+        ):
             return ActionDecision(
                 allowed=True,
                 rule="EXPLICIT_ALLOW_ENERGY_ALKOHOL",
@@ -110,15 +124,20 @@ class AVAActionPolicy:
             )
 
         # Schutzregel 2: Nehmen/Geben mit potenziellem Schaden.
+        negative_effect = self._first_matching_keyword(normalized, self._NEGATIVE_EFFECT_KEYWORDS)
         if (
             targets_ava
             and self._contains_any(normalized, self._TAKE_GIVE_KEYWORDS)
-            and self._contains_any(normalized, self._NEGATIVE_EFFECT_KEYWORDS)
+            and negative_effect is not None
         ):
             return ActionDecision(
                 allowed=False,
-                rule="DAMAGE_PROTECTION_TAKE_GIVE",
-                message="Abgelehnt: Schutzregel 'kein schädliches Nehmen/Geben' ausgelöst.",
+                rule="harm_protection",
+                message=(
+                    "Abgelehnt: Schutzregel "
+                    "'kein schädliches Nehmen/Geben mit negativem Effekt' ausgelöst "
+                    f"(negativer Effekt: {negative_effect})."
+                ),
             )
 
         # Grundfreigabe: Alles erlaubt, wenn keine Schutzregel greift.
