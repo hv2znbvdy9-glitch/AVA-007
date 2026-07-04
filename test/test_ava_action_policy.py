@@ -14,6 +14,11 @@ class TestAVAActionPolicy(unittest.TestCase):
         self.assertTrue(decision["allowed"])
         self.assertEqual(decision["rule"], "EXPLICIT_ALLOW_ENERGY_ALKOHOL")
 
+    def test_energy_alcohol_explicitly_allowed(self):
+        decision = evaluate_ava_action("Energy + Alcohol")
+        self.assertTrue(decision["allowed"])
+        self.assertEqual(decision["rule"], "EXPLICIT_ALLOW_ENERGY_ALKOHOL")
+
     def test_save_is_always_allowed(self):
         decision = evaluate_ava_action("bitte speichern")
         self.assertTrue(decision["allowed"])

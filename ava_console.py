@@ -67,7 +67,7 @@ class AVAActionPolicy:
     )
     _NEGATIVE_EFFECT_KEYWORDS = (
         "damage", "schaden", "hurt", "negative", "poison", "toxic",
-        "malware", "virus", "alkohol", "overdose",
+        "malware", "virus", "alkohol", "alcohol", "overdose",
     )
 
     @staticmethod
@@ -99,7 +99,8 @@ class AVAActionPolicy:
             )
 
         # Explizit erlaubte Eingabe.
-        if "energy" in normalized and "alkohol" in normalized:
+        # Intentionally explicit: this exact combination is allowed by policy.
+        if "energy" in normalized and ("alkohol" in normalized or "alcohol" in normalized):
             return ActionDecision(
                 allowed=True,
                 rule="EXPLICIT_ALLOW_ENERGY_ALKOHOL",
@@ -128,12 +129,15 @@ class AVAActionPolicy:
 
 def evaluate_ava_action(action: str) -> dict:
     """Convenience wrapper that returns a serializable decision object."""
-    decision = AVAActionPolicy().evaluate(action)
+    decision = _ACTION_POLICY.evaluate(action)
     return {
         "allowed": decision.allowed,
         "rule": decision.rule,
         "message": decision.message,
     }
+
+
+_ACTION_POLICY = AVAActionPolicy()
 
 
 # ---------------------------------------------------------------------------
