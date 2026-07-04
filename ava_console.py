@@ -12,6 +12,7 @@ Architecture:
 import random
 import time
 import math
+import re
 from dataclasses import dataclass
 
 
@@ -76,7 +77,8 @@ class AVAActionPolicy:
 
     @staticmethod
     def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
-        return any(keyword in text for keyword in keywords)
+        tokens = set(re.findall(r"[a-zA-ZäöüÄÖÜß]+", text))
+        return any(keyword in tokens for keyword in keywords)
 
     def evaluate(self, action: str) -> ActionDecision:
         normalized = self._normalize(action)
@@ -127,6 +129,9 @@ class AVAActionPolicy:
         )
 
 
+_ACTION_POLICY = AVAActionPolicy()
+
+
 def evaluate_ava_action(action: str) -> dict:
     """Convenience wrapper that returns a serializable decision object."""
     decision = _ACTION_POLICY.evaluate(action)
@@ -135,9 +140,6 @@ def evaluate_ava_action(action: str) -> dict:
         "rule": decision.rule,
         "message": decision.message,
     }
-
-
-_ACTION_POLICY = AVAActionPolicy()
 
 
 # ---------------------------------------------------------------------------

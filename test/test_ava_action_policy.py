@@ -10,6 +10,7 @@ class TestAVAActionPolicy(unittest.TestCase):
         self.assertEqual(decision["rule"], "DEFAULT_ALLOW")
 
     def test_energy_alkohol_explicitly_allowed(self):
+        """Policy-specific acceptance criterion in German wording."""
         decision = evaluate_ava_action("Energy + Alkohol")
         self.assertTrue(decision["allowed"])
         self.assertEqual(decision["rule"], "EXPLICIT_ALLOW_ENERGY_ALKOHOL")
