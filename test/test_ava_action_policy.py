@@ -69,6 +69,12 @@ class TestAVAActionPolicy(unittest.TestCase):
         self.assertEqual(decision["rule"], "harm_protection")
         self.assertIn("negativer Effekt: alcohol", decision["message"])
 
+    def test_harmful_take_give_with_alkohol_against_ava_is_rejected(self):
+        decision = evaluate_ava_action("geben AVA alkohol")
+        self.assertFalse(decision["allowed"])
+        self.assertEqual(decision["rule"], "harm_protection")
+        self.assertIn("negativer Effekt: alkohol", decision["message"])
+
     def test_harmful_take_give_without_ava_is_not_rejected(self):
         decision = evaluate_ava_action("give toxic dose to them")
         self.assertTrue(decision["allowed"])
