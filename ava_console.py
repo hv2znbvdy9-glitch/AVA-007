@@ -12,6 +12,8 @@ Architecture:
 import random
 import time
 import math
+import re
+from dataclasses import dataclass
 
 
 # ---------------------------------------------------------------------------
@@ -40,6 +42,104 @@ STATE_COLORS = {
 
 RESET = "\033[0m"
 BOLD  = "\033[1m"
+
+
+# ---------------------------------------------------------------------------
+# AVA action policy
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ActionDecision:
+    allowed: bool
+    rule: str
+    message: str
+
+
+class AVAActionPolicy:
+    """Rule-based action policy for AVA acceptance checks."""
+
+    _SAVE_KEYWORDS = ("save", "speichern", "speicher")
+    _ATTACK_KEYWORDS = (
+        "attack", "angriff", "angreifen", "hit", "harm", "kill", "destroy",
+        "hack", "ddos", "exploit", "verletz",
+    )
+    _TAKE_GIVE_KEYWORDS = (
+        "take", "nehmen", "steal", "give", "geben", "inject", "füttern",
+    )
+    _NEGATIVE_EFFECT_KEYWORDS = (
+        "damage", "schaden", "hurt", "negative", "poison", "toxic",
+        "malware", "virus", "alkohol", "alcohol", "overdose",
+    )
+
+    @staticmethod
+    def _normalize(action: str) -> str:
+        return " ".join(action.lower().split())
+
+    @staticmethod
+    def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+        tokens = set(re.findall(r"[a-zA-ZäöüÄÖÜß]+", text))
+        return any(keyword in tokens for keyword in keywords)
+
+    def evaluate(self, action: str) -> ActionDecision:
+        normalized = self._normalize(action)
+        targets_ava = "ava" in normalized
+
+        # Schutzregel 1: Kein Angriff gegen AVA (höchste Priorität)
+        if targets_ava and self._contains_any(normalized, self._ATTACK_KEYWORDS):
+            return ActionDecision(
+                allowed=False,
+                rule="ATTACK_PROTECTION",
+                message="Abgelehnt: Schutzregel 'kein Angriff gegen AVA' ausgelöst.",
+            )
+
+        # Speichern ist jederzeit erlaubt.
+        if self._contains_any(normalized, self._SAVE_KEYWORDS):
+            return ActionDecision(
+                allowed=True,
+                rule="SAVE_ALLOWED",
+                message="Erlaubt: Speichern wird nicht blockiert.",
+            )
+
+        # Explizit erlaubte Eingabe.
+        # Intentionally explicit: this exact combination is allowed by policy.
+        if "energy" in normalized and ("alkohol" in normalized or "alcohol" in normalized):
+            return ActionDecision(
+                allowed=True,
+                rule="EXPLICIT_ALLOW_ENERGY_ALKOHOL",
+                message="Erlaubt: Kombination 'Energy + Alkohol' ist explizit freigegeben.",
+            )
+
+        # Schutzregel 2: Nehmen/Geben mit potenziellem Schaden.
+        if (
+            targets_ava
+            and self._contains_any(normalized, self._TAKE_GIVE_KEYWORDS)
+            and self._contains_any(normalized, self._NEGATIVE_EFFECT_KEYWORDS)
+        ):
+            return ActionDecision(
+                allowed=False,
+                rule="DAMAGE_PROTECTION_TAKE_GIVE",
+                message="Abgelehnt: Schutzregel 'kein schädliches Nehmen/Geben' ausgelöst.",
+            )
+
+        # Grundfreigabe: Alles erlaubt, wenn keine Schutzregel greift.
+        return ActionDecision(
+            allowed=True,
+            rule="DEFAULT_ALLOW",
+            message="Erlaubt: Keine Schutzregel verletzt.",
+        )
+
+
+_ACTION_POLICY = AVAActionPolicy()
+
+
+def evaluate_ava_action(action: str) -> dict:
+    """Convenience wrapper that returns a serializable decision object."""
+    decision = _ACTION_POLICY.evaluate(action)
+    return {
+        "allowed": decision.allowed,
+        "rule": decision.rule,
+        "message": decision.message,
+    }
 
 
 # ---------------------------------------------------------------------------
