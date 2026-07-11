@@ -32,7 +32,7 @@ param(
     [switch]$Loop,
     [switch]$InstallTask,
     [switch]$RemoveTask,
-    [int]$Interval = 60
+    [int]$IntervalSeconds = 60
 )
 
 Set-StrictMode -Version Latest
@@ -46,11 +46,11 @@ $LogDir     = Join-Path $Root 'Logs'
 $StateDir   = Join-Path $Root 'State'
 $ReportDir  = Join-Path $Root 'Reports'
 
-$TaskName    = 'AVA_WLAN_GUARDIAN_V1'
+$TaskName    = 'AVA_WLAN_TANGLE_SENSOR_V1'
 $EventLog    = Join-Path $LogDir   'wlan_events.jsonl'
 $TangleLog   = Join-Path $LogDir   'wlan_tangle.jsonl'
 $TangleState = Join-Path $StateDir 'wlan_tangle_state.json'
-$PortalHtml  = Join-Path $ReportDir 'ava_wlan.html'
+$PortalHtml  = Join-Path $ReportDir 'ava_wlan_portal.html'
 
 # =========================
 # HELPERS
@@ -161,6 +161,7 @@ function Get-WlanNetworksSafe {
                 Encryption     = $currentEncrypt
                 Signal         = $null
                 RadioType      = $null
+                Channel        = $null
             })
         }
         elseif ($l -match '^Signal\s*:\s+(.+)') {
@@ -171,6 +172,11 @@ function Get-WlanNetworksSafe {
         elseif ($l -match '^Radio\s+type\s*:\s+(.+)') {
             if ($items.Count -gt 0) {
                 $items[$items.Count - 1].RadioType = $Matches[1].Trim()
+            }
+        }
+        elseif ($l -match '^Channel\s*:\s+(.+)') {
+            if ($items.Count -gt 0) {
+                $items[$items.Count - 1].Channel = $Matches[1].Trim()
             }
         }
     }
@@ -184,10 +190,17 @@ function Get-WlanNetworksSafe {
 function Get-LocalNetworkSnapshot {
     $adapters = @()
     try {
-        $adapters = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-            Select-Object InterfaceAlias, IPAddress, PrefixLength
+        $adapters = Get-NetAdapter -ErrorAction SilentlyContinue |
+            Select-Object Name, InterfaceDescription, Status, MacAddress, LinkSpeed
     }
     catch { $adapters = @() }
+
+    $ipconfig = @()
+    try {
+        $ipconfig = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+            Select-Object InterfaceAlias, IPv4Address, IPv6Address, IPv4DefaultGateway, DNSServer
+    }
+    catch { $ipconfig = @() }
 
     $neighbors = @()
     try {
@@ -218,7 +231,9 @@ function Get-LocalNetworkSnapshot {
         computer  = $env:COMPUTERNAME
         user      = $env:USERNAME
         adapters  = $adapters
+        ipconfig  = $ipconfig
         neighbors = $neighbors
+        wlan      = Get-WlanNetworksSafe
     }
 }
 
@@ -252,13 +267,54 @@ function Build-WlanPortal {
           <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.Encryption))</td>
           <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.Signal))</td>
           <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.RadioType))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$n.Channel))</td>
         </tr>"
     }
 
     $wlanTable = @"
 <table>
-  <tr><th>SSID</th><th>BSSID</th><th>Auth</th><th>Encryption</th><th>Signal</th><th>Radio</th></tr>
+  <tr><th>SSID</th><th>BSSID</th><th>Authentifizierung</th><th>Verschlüsselung</th><th>Signal</th><th>Funktyp</th><th>Kanal</th></tr>
   $($wlanRows -join "`n")
+</table>
+"@
+
+    # Adapter table
+    $adapterRows = foreach ($ad in $LocalSnap.adapters) {
+        "<tr>
+          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.Name))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.InterfaceDescription))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.Status))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.MacAddress))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.LinkSpeed))</td>
+        </tr>"
+    }
+
+    $adapterTable = @"
+<table>
+  <tr><th>Name</th><th>Beschreibung</th><th>Status</th><th>MAC-Adresse</th><th>Geschwindigkeit</th></tr>
+  $($adapterRows -join "`n")
+</table>
+"@
+
+    # IP config table
+    $ipconfigRows = foreach ($ip in $LocalSnap.ipconfig) {
+        $ipv4 = if ($ip.IPv4Address) { ($ip.IPv4Address | ForEach-Object { $_.IPAddress }) -join ', ' } else { '' }
+        $ipv6 = if ($ip.IPv6Address) { ($ip.IPv6Address | ForEach-Object { $_.IPAddress }) -join ', ' } else { '' }
+        $gw   = if ($ip.IPv4DefaultGateway) { ($ip.IPv4DefaultGateway | ForEach-Object { $_.NextHop }) -join ', ' } else { '' }
+        $dns  = if ($ip.DNSServer) { ($ip.DNSServer.ServerAddresses) -join ', ' } else { '' }
+        "<tr>
+          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ip.InterfaceAlias))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode($ipv4))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode($ipv6))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode($gw))</td>
+          <td>$([System.Web.HttpUtility]::HtmlEncode($dns))</td>
+        </tr>"
+    }
+
+    $ipconfigTable = @"
+<table>
+  <tr><th>Interface</th><th>IPv4</th><th>IPv6</th><th>Gateway</th><th>DNS-Server</th></tr>
+  $($ipconfigRows -join "`n")
 </table>
 "@
 
@@ -274,24 +330,8 @@ function Build-WlanPortal {
 
     $neighborTable = @"
 <table>
-  <tr><th>IP-Adresse</th><th>MAC</th><th>Status</th><th>Interface</th></tr>
+  <tr><th>IP-Adresse</th><th>MAC-Adresse</th><th>Status</th><th>Interface</th></tr>
   $($neighborRows -join "`n")
-</table>
-"@
-
-    # Adapter table
-    $adapterRows = foreach ($ad in $LocalSnap.adapters) {
-        "<tr>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.InterfaceAlias))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.IPAddress))</td>
-          <td>$([System.Web.HttpUtility]::HtmlEncode([string]$ad.PrefixLength))</td>
-        </tr>"
-    }
-
-    $adapterTable = @"
-<table>
-  <tr><th>Interface</th><th>IPv4-Adresse</th><th>Prefix</th></tr>
-  $($adapterRows -join "`n")
 </table>
 "@
 
@@ -312,6 +352,9 @@ function Build-WlanPortal {
   <h2>Eigene Netzwerkadapter</h2>
   $adapterTable
 
+  <h2>IP-Konfiguration</h2>
+  $ipconfigTable
+
   <h2>LAN-Nachbarn (ARP/Neighbor)</h2>
   $neighborTable
 </body>
@@ -327,8 +370,8 @@ function Build-WlanPortal {
 function Invoke-Scan {
     Ensure-Dirs
 
-    $networks   = Get-WlanNetworksSafe
     $localSnap  = Get-LocalNetworkSnapshot
+    $networks   = $localSnap.wlan
 
     # Event log (flat JSONL)
     Write-JsonLine -Path $EventLog -Object ([ordered]@{
@@ -367,14 +410,14 @@ function Install-WlanTask {
                      -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -RunOnce"
     $trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
     $trigger.Repetition = New-ScheduledTaskRepetitionSettings `
-                              -Interval (New-TimeSpan -Seconds $Interval) `
+                              -Interval (New-TimeSpan -Seconds $IntervalSeconds) `
                               -Duration ([TimeSpan]::MaxValue)
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
 
     Register-ScheduledTask -TaskName $TaskName -Action $action `
         -Trigger $trigger -Principal $principal -Force | Out-Null
 
-    Write-Host "Scheduled Task installiert: $TaskName (Intervall: ${Interval}s)" -ForegroundColor Green
+    Write-Host "Scheduled Task installiert: $TaskName (Intervall: ${IntervalSeconds}s)" -ForegroundColor Green
 }
 
 function Remove-WlanTask {
@@ -408,10 +451,10 @@ if ($RunOnce) {
 }
 
 if ($Loop) {
-    Write-Host "AVA WLAN Loop gestartet (Intervall: ${Interval}s). Abbrechen mit Ctrl+C." -ForegroundColor Green
+    Write-Host "AVA WLAN Loop gestartet (Intervall: ${IntervalSeconds}s). Abbrechen mit Ctrl+C." -ForegroundColor Green
     while ($true) {
         Invoke-Scan
-        Start-Sleep -Seconds $Interval
+        Start-Sleep -Seconds $IntervalSeconds
     }
 }
 
