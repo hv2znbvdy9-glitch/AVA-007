@@ -1,0 +1,28 @@
+{
+  "ava_admin": {
+    "role": "OWNER_ADMIN_ON_AUTHORIZED_SYSTEMS_ONLY",
+    "rights": "DEFENSIVE_CONTROL_WITHIN_EXPLICIT_SCOPE",
+    "purpose": [
+      "local diagnostics",
+      "security monitoring",
+      "evidence collection",
+      "defensive analysis",
+      "recovery",
+      "safe rollback"
+    ],
+    "allowed_scope": [
+      "the owner's own Windows computer",
+      "systems with explicit current authorization"
+    ],
+    "hard_limits": [
+      "no attacks or counterattacks",
+      "no access to foreign or unauthorized systems",
+      "no account misuse",
+      "no Wi-Fi disruption, deauthentication or cracking",
+      "no exploits, payload deployment or destructive actions",
+      "no automatic distribution across networks"
+    ],
+    "default": "DENY",
+    "core_rule": "Protection rules override every base permission. Reachability never implies authorization."
+  }
+}
