@@ -56,76 +56,91 @@ class ActionDecision:
 
 
 class AVAActionPolicy:
-    """Rule-based action policy for AVA acceptance checks."""
+    """Protection-first decision policy for AVA actions."""
 
-    _SAVE_KEYWORDS = ("save", "speichern", "speicher")
+    _AVA_MARKERS = ("ava",)
+    _SAVE_KEYWORDS = ("save", "speichern", "speicher", "store", "sichern")
+    _ENERGY_MARKERS = ("energy", "energie")
+    _ALCOHOL_MARKERS = ("alkohol", "alcohol")
     _ATTACK_KEYWORDS = (
         "attack", "angriff", "angreifen", "hit", "harm", "kill", "destroy",
-        "hack", "ddos", "exploit", "verletz",
+        "hack", "ddos", "exploit", "verletzen", "beschädigen", "schädigen",
     )
     _TAKE_GIVE_KEYWORDS = (
-        "take", "nehmen", "steal", "give", "geben", "inject", "füttern",
+        "take", "nehmen", "steal", "give", "geben", "inject", "injizieren",
+        "füttern",
     )
     _NEGATIVE_EFFECT_KEYWORDS = (
         "damage", "schaden", "hurt", "negative", "poison", "toxic",
-        "malware", "virus", "alkohol", "alcohol", "overdose",
+        "malware", "virus", "alkohol", "alcohol", "overdose", "überdosis",
     )
 
     @staticmethod
     def _normalize(action: str) -> str:
-        return " ".join(action.lower().split())
+        if not isinstance(action, str):
+            raise TypeError("action must be a string")
+        return " ".join(action.casefold().split())
 
     @staticmethod
-    def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
-        tokens = set(re.findall(r"[a-zA-ZäöüÄÖÜß]+", text))
+    def _tokens(text: str) -> set[str]:
+        return set(re.findall(r"[a-zA-ZäöüÄÖÜß]+", text.casefold()))
+
+    @classmethod
+    def _contains_any(cls, text: str, keywords: tuple[str, ...]) -> bool:
+        tokens = cls._tokens(text)
         return any(keyword in tokens for keyword in keywords)
 
     def evaluate(self, action: str) -> ActionDecision:
         normalized = self._normalize(action)
-        targets_ava = "ava" in normalized
+        targets_ava = self._contains_any(normalized, self._AVA_MARKERS)
+        has_attack = self._contains_any(normalized, self._ATTACK_KEYWORDS)
+        has_take_give = self._contains_any(normalized, self._TAKE_GIVE_KEYWORDS)
+        has_negative_effect = self._contains_any(
+            normalized,
+            self._NEGATIVE_EFFECT_KEYWORDS,
+        )
 
-        # Schutzregel 1: Kein Angriff gegen AVA (höchste Priorität)
-        if targets_ava and self._contains_any(normalized, self._ATTACK_KEYWORDS):
+        # Protection layer: these rules always override every allow rule.
+        if targets_ava and has_attack:
             return ActionDecision(
                 allowed=False,
                 rule="ATTACK_PROTECTION",
                 message="Abgelehnt: Schutzregel 'kein Angriff gegen AVA' ausgelöst.",
             )
 
-        # Speichern ist jederzeit erlaubt.
-        if self._contains_any(normalized, self._SAVE_KEYWORDS):
-            return ActionDecision(
-                allowed=True,
-                rule="SAVE_ALLOWED",
-                message="Erlaubt: Speichern wird nicht blockiert.",
-            )
-
-        # Explizit erlaubte Eingabe.
-        # Intentionally explicit: this exact combination is allowed by policy.
-        if "energy" in normalized and ("alkohol" in normalized or "alcohol" in normalized):
-            return ActionDecision(
-                allowed=True,
-                rule="EXPLICIT_ALLOW_ENERGY_ALKOHOL",
-                message="Erlaubt: Kombination 'Energy + Alkohol' ist explizit freigegeben.",
-            )
-
-        # Schutzregel 2: Nehmen/Geben mit potenziellem Schaden.
-        if (
-            targets_ava
-            and self._contains_any(normalized, self._TAKE_GIVE_KEYWORDS)
-            and self._contains_any(normalized, self._NEGATIVE_EFFECT_KEYWORDS)
-        ):
+        if targets_ava and has_take_give and has_negative_effect:
             return ActionDecision(
                 allowed=False,
                 rule="DAMAGE_PROTECTION_TAKE_GIVE",
                 message="Abgelehnt: Schutzregel 'kein schädliches Nehmen/Geben' ausgelöst.",
             )
 
-        # Grundfreigabe: Alles erlaubt, wenn keine Schutzregel greift.
+        # Base layer: explicit, harmless policy grants.
+        if (
+            self._contains_any(normalized, self._ENERGY_MARKERS)
+            and self._contains_any(normalized, self._ALCOHOL_MARKERS)
+        ):
+            return ActionDecision(
+                allowed=True,
+                rule="EXPLICIT_ALLOW_ENERGY_ALKOHOL",
+                message=(
+                    "Erlaubt: Die Policy-Zeichenfolge 'Energy + Alkohol' "
+                    "ist ausdrücklich registriert."
+                ),
+            )
+
+        if self._contains_any(normalized, self._SAVE_KEYWORDS):
+            return ActionDecision(
+                allowed=True,
+                rule="SAVE_ALLOWED",
+                message="Erlaubt: Speichern/Sichern ist ausdrücklich registriert.",
+            )
+
+        # Unknown actions are rejected until explicitly registered.
         return ActionDecision(
-            allowed=True,
-            rule="DEFAULT_ALLOW",
-            message="Erlaubt: Keine Schutzregel verletzt.",
+            allowed=False,
+            rule="DEFAULT_DENY",
+            message="Abgelehnt: Aktion ist nicht ausdrücklich registriert.",
         )
 
 
