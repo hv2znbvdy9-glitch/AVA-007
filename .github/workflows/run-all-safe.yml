@@ -1,0 +1,114 @@
+name: Run All Safe Checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/run-all-safe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  static-safe-audit:
+    name: Inventory, hash, and static parse
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Inventory tracked files and calculate SHA-256
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+
+          $Out = Join-Path $env:RUNNER_TEMP 'ava-run-all-safe'
+          New-Item -ItemType Directory -Path $Out -Force | Out-Null
+
+          $Files = @(git ls-files | Where-Object { $_ })
+          $Inventory = foreach ($RelativePath in $Files) {
+            $FullPath = Join-Path $PWD $RelativePath
+            if (Test-Path -LiteralPath $FullPath -PathType Leaf) {
+              $Item = Get-Item -LiteralPath $FullPath
+              [pscustomobject]@{
+                path = $RelativePath
+                size_bytes = $Item.Length
+                sha256 = (Get-FileHash -LiteralPath $FullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+              }
+            }
+          }
+
+          $Inventory |
+            ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $Out 'inventory.sha256.json') -Encoding UTF8
+
+          Write-Host "[AVA] inventoried and hashed $($Inventory.Count) tracked files."
+
+      - name: Statically parse every PowerShell file
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+
+          $Out = Join-Path $env:RUNNER_TEMP 'ava-run-all-safe'
+          $Results = [System.Collections.Generic.List[object]]::new()
+          $HasErrors = $false
+
+          $PowerShellFiles = @(
+            Get-ChildItem -LiteralPath $PWD -Recurse -File -Filter '*.ps1' |
+              Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } |
+              Sort-Object FullName
+          )
+
+          foreach ($File in $PowerShellFiles) {
+            $Tokens = $null
+            $Errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $File.FullName,
+              [ref]$Tokens,
+              [ref]$Errors
+            ) | Out-Null
+
+            $Parsed = (@($Errors).Count -eq 0)
+            if (-not $Parsed) { $HasErrors = $true }
+
+            $Results.Add([pscustomobject]@{
+              path = [IO.Path]::GetRelativePath($PWD.Path, $File.FullName)
+              parsed = $Parsed
+              errors = @($Errors | ForEach-Object { $_.Message })
+            })
+          }
+
+          $Results |
+            ConvertTo-Json -Depth 6 |
+            Set-Content -LiteralPath (Join-Path $Out 'powershell-parse-results.json') -Encoding UTF8
+
+          if ($HasErrors) {
+            throw 'Static PowerShell parsing found syntax errors.'
+          }
+
+          Write-Host "[AVA] statically parsed $($Results.Count) PowerShell files without executing them."
+
+      - name: Verify repository was not modified
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1)"
+          echo '[AVA][PASS] repository remained unchanged.'
+
+      - name: Upload safe-audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ava-run-all-safe-${{ github.run_id }}
+          path: ${{ runner.temp }}/ava-run-all-safe
+          if-no-files-found: warn
+          retention-days: 14
+
+# Safe trigger marker: manual-safe-run-2026-08-04T13-53+02-00
