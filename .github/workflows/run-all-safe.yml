@@ -23,32 +23,66 @@ jobs:
           persist-credentials: false
 
       - name: Inventory tracked files and calculate SHA-256
-        shell: pwsh
+        shell: bash
         run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
 
-          $Out = Join-Path $env:RUNNER_TEMP 'ava-run-all-safe'
-          New-Item -ItemType Directory -Path $Out -Force | Out-Null
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ava-run-all-safe'
+          out.mkdir(parents=True, exist_ok=True)
 
-          $Files = @(git ls-files | Where-Object { $_ })
-          $Inventory = foreach ($RelativePath in $Files) {
-            $FullPath = Join-Path $PWD $RelativePath
-            if (Test-Path -LiteralPath $FullPath -PathType Leaf) {
-              $Item = Get-Item -LiteralPath $FullPath
-              [pscustomobject]@{
-                path = $RelativePath
-                size_bytes = $Item.Length
-                sha256 = (Get-FileHash -LiteralPath $FullPath -Algorithm SHA256).Hash.ToLowerInvariant()
-              }
-            }
-          }
+          raw_paths = subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0')
+          inventory = []
+          failures = []
 
-          $Inventory |
-            ConvertTo-Json -Depth 4 |
-            Set-Content -LiteralPath (Join-Path $Out 'inventory.sha256.json') -Encoding UTF8
+          for raw_path in raw_paths:
+              if not raw_path:
+                  continue
 
-          Write-Host "[AVA] inventoried and hashed $($Inventory.Count) tracked files."
+              relative_path = raw_path.decode('utf-8', errors='surrogateescape')
+              path = pathlib.Path(relative_path)
+              source = 'worktree'
+
+              try:
+                  data = path.read_bytes()
+              except (FileNotFoundError, IsADirectoryError, OSError):
+                  source = 'git-object'
+                  try:
+                      data = subprocess.check_output(['git', 'show', f'HEAD:{relative_path}'])
+                  except subprocess.CalledProcessError as exc:
+                      failures.append({
+                          'path': relative_path,
+                          'error': f'unable to read tracked file from worktree or git object (exit {exc.returncode})'
+                      })
+                      continue
+
+              inventory.append({
+                  'path': relative_path,
+                  'size_bytes': len(data),
+                  'sha256': hashlib.sha256(data).hexdigest(),
+                  'source': source,
+              })
+
+          (out / 'inventory.sha256.json').write_text(
+              json.dumps(inventory, indent=2, ensure_ascii=False),
+              encoding='utf-8'
+          )
+
+          if failures:
+              (out / 'inventory.failures.json').write_text(
+                  json.dumps(failures, indent=2, ensure_ascii=False),
+                  encoding='utf-8'
+              )
+              raise SystemExit(f'[AVA][STOP] {len(failures)} tracked file(s) could not be hashed.')
+
+          fallback_count = sum(1 for item in inventory if item['source'] == 'git-object')
+          print(f'[AVA] inventoried and hashed {len(inventory)} tracked files; git-object fallback used for {fallback_count}.')
+          PY
 
       - name: Statically parse every PowerShell file
         shell: pwsh
@@ -111,4 +145,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# Safe trigger marker: manual-safe-run-2026-08-04T14-07+02-00
+# Safe trigger marker: inventory-git-object-fallback-2026-08-13
