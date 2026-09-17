@@ -43,5 +43,5 @@ test('glob setup errors are not masked by selection insights', async t => {
 
 	t.equal(runStatus.selectionInsights.testFileCount, 0);
 	t.equal(internalErrors.length, 1);
-	t.notMatch(internalErrors[0].message, /testFiles|undefined/i);
+	t.notMatch(internalErrors[0].message, /testfiles|undefined/i);
 });
