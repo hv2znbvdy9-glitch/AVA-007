@@ -434,9 +434,7 @@ function Assert-SafeRuntimeScript {
             {
                 param($Node)
 
-                $Node -is [
-                    System.Management.Automation.Language.CommandAst
-                ]
+                $Node -is [System.Management.Automation.Language.CommandAst]
             },
             $true
         ) |
@@ -451,7 +449,7 @@ function Assert-SafeRuntimeScript {
     )
 
     if ($BlockedHits.Count -gt 0) {
-        throw "Blockierte Befehle in $Path: $($BlockedHits -join ', ')"
+        throw "Blockierte Befehle in ${Path}: $($BlockedHits -join ', ')"
     }
 
     $Content = Get-Content -LiteralPath $Path -Raw
