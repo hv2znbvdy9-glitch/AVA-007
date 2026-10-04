@@ -2,10 +2,15 @@ name: Run All Safe Checks
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/run-all-safe.yml'
+      - 'windows/**/*.ps1'
   push:
     branches: [main]
     paths:
       - '.github/workflows/run-all-safe.yml'
+      - 'windows/**/*.ps1'
 
 permissions:
   contents: read
@@ -109,22 +114,42 @@ jobs:
               [ref]$Errors
             ) | Out-Null
 
+            $RelativePath = [IO.Path]::GetRelativePath($PWD.Path, $File.FullName)
             $Parsed = (@($Errors).Count -eq 0)
-            if (-not $Parsed) { $HasErrors = $true }
+            if (-not $Parsed) {
+              $HasErrors = $true
+              foreach ($ParseError in @($Errors)) {
+                $Line = $ParseError.Extent.StartLineNumber
+                $Column = $ParseError.Extent.StartColumnNumber
+                Write-Host (
+                  '[AVA][PARSE_ERROR] {0}:{1}:{2}: {3}' -f
+                  $RelativePath,
+                  $Line,
+                  $Column,
+                  $ParseError.Message
+                )
+              }
+            }
 
             $Results.Add([pscustomobject]@{
-              path = [IO.Path]::GetRelativePath($PWD.Path, $File.FullName)
+              path = $RelativePath
               parsed = $Parsed
-              errors = @($Errors | ForEach-Object { $_.Message })
+              errors = @($Errors | ForEach-Object {
+                [pscustomobject]@{
+                  line = $_.Extent.StartLineNumber
+                  column = $_.Extent.StartColumnNumber
+                  message = $_.Message
+                }
+              })
             })
           }
 
           $Results |
-            ConvertTo-Json -Depth 6 |
+            ConvertTo-Json -Depth 8 |
             Set-Content -LiteralPath (Join-Path $Out 'powershell-parse-results.json') -Encoding UTF8
 
           if ($HasErrors) {
-            throw 'Static PowerShell parsing found syntax errors.'
+            throw 'Static PowerShell parsing found syntax errors. See [AVA][PARSE_ERROR] lines above.'
           }
 
           Write-Host "[AVA] statically parsed $($Results.Count) PowerShell files without executing them."
@@ -145,4 +170,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# Safe trigger marker: inventory-git-object-fallback-2026-08-13
+# Safe trigger marker: parser-diagnostics-and-pr-validation-2026-09-17
