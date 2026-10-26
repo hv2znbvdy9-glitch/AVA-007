@@ -1,0 +1,32 @@
+name: AVA 01610 Event Integrity Tests
+
+on:
+  pull_request:
+    paths:
+      - "tests/test_event_integrity_01610.py"
+      - ".github/workflows/event-integrity-python.yml"
+  push:
+    branches:
+      - "copilot/ava-01610-event-integrity-test"
+    paths:
+      - "tests/test_event_integrity_01610.py"
+      - ".github/workflows/event-integrity-python.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-event-integrity:
+    name: Python event-integrity regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run event-integrity tests
+        run: python -m unittest discover -s tests -p "test_event_integrity_01610.py" -v
