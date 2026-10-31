@@ -43,6 +43,7 @@ exports.sanitizers = {
 	acorn: string => string.split('\n').filter(line => !/node_modules.acorn/.test(line)).join('\n'),
 	cwd: string => string.replaceAll(cwdFileUrlPrefix, '').replaceAll(process.cwd(), '~'),
 	experimentalWarning: string => string.replaceAll(/^\(node:\d+\) ExperimentalWarning.+\n/g, ''),
+	internalFrames: string => string.split('\n').filter(line => !/file:\/\/lib\/(?:assert|test|runner)\.js:\d+:\d+\)/.test(line)).join('\n'),
 	lineEndings: string => string.replaceAll('\r\n', '\n'),
 	// The following are invjected by tap@18.
 	posix: string => string.replaceAll('\\', '/'),
